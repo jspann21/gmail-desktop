@@ -64,9 +64,12 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
             var session = await GetOrCreateSessionAsync(account);
             ThrowIfDisposed();
+            // Composition-backed views need a realized WPF surface before their
+            // browser capture is resumed, or account switches can return a blank image.
+            session.View.Visibility = Visibility.Visible;
+            session.View.UpdateLayout();
             if (session.View.CoreWebView2.IsSuspended)
                 session.View.CoreWebView2.Resume();
-            session.View.Visibility = Visibility.Visible;
             session.View.Focus();
 
             await ReconcileSessionsCoreAsync(mode);
@@ -324,7 +327,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             session.NavigationId = null;
             session.ExternallyHandledNavigationIds.Add(args.NavigationId);
             ReportStatus(account, new BrowserStatusEventArgs(string.Empty));
-            OpenInDefaultBrowser(args.Uri);
+            if (args.IsUserInitiated)
+                OpenInDefaultBrowser(args.Uri);
         };
 
         core.FrameNavigationStarting += (_, args) =>
@@ -374,6 +378,11 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         {
             args.Handled = true;
 
+            // An empty popup has no safe destination to reuse in the main view, and
+            // CoreWebView2.Navigate rejects it. Suppress it instead of crashing the UI.
+            if (string.IsNullOrWhiteSpace(args.Uri) || args.Uri == "about:blank")
+                return;
+
             // Gmail's welcome page opens the inbox/account chooser in a new window.
             // Keep that transition in this account's isolated browser profile.
             if (IsGmailWelcomeUri(core.Source))
@@ -392,7 +401,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             {
                 core.Navigate(args.Uri);
             }
-            else
+            else if (args.IsUserInitiated)
             {
                 OpenInDefaultBrowser(args.Uri);
             }

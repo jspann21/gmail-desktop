@@ -35,24 +35,33 @@ public sealed class SettingsService
 
     private AppSettings LoadEncryptedSettings()
     {
-        byte[]? plaintext = null;
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            var encrypted = File.ReadAllBytes(SettingsPath);
-            plaintext = ProtectedData.Unprotect(
-                encrypted,
-                SettingsEntropy,
-                DataProtectionScope.CurrentUser);
-            return JsonSerializer.Deserialize<AppSettings>(plaintext, _jsonOptions) ?? new AppSettings();
-        }
-        catch (Exception ex) when (ex is CryptographicException or JsonException or IOException)
-        {
-            PreserveUnreadableEncryptedSettings();
-            return new AppSettings();
-        }
-        finally
-        {
-            if (plaintext is not null) CryptographicOperations.ZeroMemory(plaintext);
+            byte[]? plaintext = null;
+            try
+            {
+                var encrypted = File.ReadAllBytes(SettingsPath);
+                plaintext = ProtectedData.Unprotect(
+                    encrypted,
+                    SettingsEntropy,
+                    DataProtectionScope.CurrentUser);
+                return JsonSerializer.Deserialize<AppSettings>(plaintext, _jsonOptions) ?? new AppSettings();
+            }
+            catch (IOException) when (attempt < 2)
+            {
+                // A scanner or backup process can briefly lock the file. Retry instead
+                // of quarantining valid settings as though their contents were corrupt.
+                Thread.Sleep(50 * (1 << attempt));
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                PreserveUnreadableEncryptedSettings();
+                return new AppSettings();
+            }
+            finally
+            {
+                if (plaintext is not null) CryptographicOperations.ZeroMemory(plaintext);
+            }
         }
     }
 
@@ -74,19 +83,30 @@ public sealed class SettingsService
             CryptographicOperations.ZeroMemory(plaintext);
         }
 
-        using (var stream = new FileStream(
-                   tempPath,
-                   FileMode.Create,
-                   FileAccess.Write,
-                   FileShare.None,
-                   bufferSize: 4096,
-                   FileOptions.WriteThrough))
+        for (var attempt = 0; ; attempt++)
         {
-            stream.Write(encrypted);
-            stream.Flush(flushToDisk: true);
-        }
+            try
+            {
+                using (var stream = new FileStream(
+                           tempPath,
+                           FileMode.Create,
+                           FileAccess.Write,
+                           FileShare.None,
+                           bufferSize: 4096,
+                           FileOptions.WriteThrough))
+                {
+                    stream.Write(encrypted);
+                    stream.Flush(flushToDisk: true);
+                }
 
-        File.Move(tempPath, SettingsPath, overwrite: true);
+                File.Move(tempPath, SettingsPath, overwrite: true);
+                return;
+            }
+            catch (IOException) when (attempt < 2)
+            {
+                Thread.Sleep(50 * (1 << attempt));
+            }
+        }
     }
 
     public string GetProfileDirectory(AccountProfile account)

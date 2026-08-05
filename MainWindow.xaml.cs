@@ -604,6 +604,9 @@ public partial class MainWindow : Window
 
     private void SessionManager_StatusChanged(object? sender, BrowserStatusEventArgs e)
     {
+        // A completed-download message may have armed this timer. Do not let that
+        // stale timer erase a newer loading or navigation status.
+        _statusTimer.Stop();
         LoadingProgress.Visibility = e.IsBusy ? Visibility.Visible : Visibility.Collapsed;
         if (e.IsError)
         {
@@ -617,7 +620,6 @@ public partial class MainWindow : Window
         StatusText.Text = e.Message;
         if (!e.IsBusy && !string.IsNullOrWhiteSpace(e.Message))
         {
-            _statusTimer.Stop();
             _statusTimer.Start();
         }
     }

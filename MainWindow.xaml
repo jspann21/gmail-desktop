@@ -142,11 +142,17 @@
                     </Border>
                 </Grid>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Grid Grid.Column="1" VerticalAlignment="Center" ClipToBounds="True">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <TextBlock Text="Gmail Desktop" Foreground="White" FontSize="13" FontWeight="SemiBold" />
-                    <TextBlock Text="  ·  " Foreground="#99FFFFFF" />
-                    <TextBlock x:Name="TitleAccountText" Text="No account selected" Foreground="#CCFFFFFF" FontSize="13" />
-                </StackPanel>
+                    <TextBlock Grid.Column="1" Text="  ·  " Foreground="#99FFFFFF" />
+                    <TextBlock x:Name="TitleAccountText" Grid.Column="2" Text="No account selected"
+                               Foreground="#CCFFFFFF" FontSize="13" TextTrimming="CharacterEllipsis" />
+                </Grid>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button Style="{StaticResource TitleBarButtonStyle}" Click="Minimize_Click" ToolTip="Minimize">
@@ -347,11 +353,18 @@
                                       StrokeLineJoin="Round" Fill="Transparent" Width="18" Height="17" Stretch="Uniform" />
                             </Button>
 
-                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                                <TextBlock x:Name="ToolbarAccountText" Text="Gmail" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock x:Name="StatusText" Margin="12,0,0,0" Foreground="{DynamicResource TextSecondaryBrush}"
-                                           FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
+                            <Grid Grid.Column="3" VerticalAlignment="Center" Margin="10,0,0,0" ClipToBounds="True">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="ToolbarAccountText" Text="Gmail" MaxWidth="220"
+                                           FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="StatusText" Grid.Column="1" Margin="12,0,0,0"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </Grid>
 
                             <Border Grid.Column="4" Background="{DynamicResource ControlHoverBrush}" CornerRadius="11" Padding="10,4"
                                     VerticalAlignment="Center">
