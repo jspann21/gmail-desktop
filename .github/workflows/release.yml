@@ -1,0 +1,89 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example, v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          $releaseVersion = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $env:DISPATCH_VERSION
+          } else {
+            $env:GITHUB_REF_NAME
+          }
+
+          if ($releaseVersion -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Version '$releaseVersion' must use the format v1.2.3."
+          }
+
+          "release=$releaseVersion" >> $env:GITHUB_OUTPUT
+          "assembly=$($releaseVersion.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+          "asset=gmail-desktop-$releaseVersion-windows-x64.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Restore dependencies
+        run: dotnet restore GmailDesktop.csproj
+
+      - name: Publish Windows executable
+        shell: pwsh
+        run: |
+          dotnet publish GmailDesktop.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output publish `
+            -p:Version=${{ steps.version.outputs.assembly }} `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false
+
+          Move-Item `
+            -LiteralPath publish/GmailDesktop.exe `
+            -Destination "publish/${{ steps.version.outputs.asset }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-desktop-${{ steps.version.outputs.release }}-windows-x64
+          path: publish/${{ steps.version.outputs.asset }}
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release }}
+          RELEASE_ASSET: publish/${{ steps.version.outputs.asset }}
+        run: |
+          gh release create $env:RELEASE_VERSION $env:RELEASE_ASSET `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "Gmail Desktop $env:RELEASE_VERSION" `
+            --generate-notes

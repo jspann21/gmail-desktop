@@ -1,0 +1,319 @@
+<Window x:Class="GmailDesktop.Dialogs.AccountDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add Gmail account"
+        Width="560" Height="720"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Icon="/Assets/GmailDesktop.ico"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        Loaded="Window_Loaded"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <Style x:Key="AccountTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="FieldBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="FieldBorder" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FieldBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="FieldBorder" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="18,0" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Width="46" Height="26">
+                            <Border x:Name="Track" Background="{DynamicResource BorderBrush}" CornerRadius="13" />
+                            <Ellipse x:Name="Thumb" Width="20" Height="20" Fill="White"
+                                     HorizontalAlignment="Left" Margin="3,0,0,0">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect BlurRadius="3" Direction="270" ShadowDepth="1" Opacity="0.2" />
+                                </Ellipse.Effect>
+                            </Ellipse>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="Opacity" Value="0.82" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Track" Property="BorderThickness" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14">
+        <Border x:Name="WindowSurface"
+                Background="{DynamicResource WindowBackgroundBrush}"
+                CornerRadius="13" BorderThickness="0"
+                SizeChanged="WindowSurface_SizeChanged">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="24" ShadowDepth="5" Opacity="0.28" Color="#FF000000" />
+            </Border.Effect>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="48" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="72" />
+                </Grid.RowDefinitions>
+
+                <Grid Background="{DynamicResource SidebarBackgroundBrush}"
+                      MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="48" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
+                        <Border Width="24" Height="24" CornerRadius="6" Background="#FFEA4335">
+                            <Path Data="M5,7 L12,12 L19,7 M5,7 L5,18 M19,7 L19,18"
+                                  Stroke="White" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                        </Border>
+                        <TextBlock Text="Gmail Desktop" Foreground="White" FontSize="13" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Margin="10,0,0,0" />
+                        <TextBlock x:Name="TitleModeText" Text="  /  Add account" Foreground="#99FFFFFF"
+                                   FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Click="Close_Click" ToolTip="Close" Cursor="Hand"
+                            Background="Transparent" BorderThickness="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="CloseBackground" Background="Transparent">
+                                    <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="White" StrokeThickness="1.2"
+                                          Width="11" Height="11" Stretch="Uniform"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="CloseBackground" Property="Background" Value="#FFE81123" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="30,24,30,20">
+                        <Grid Margin="0,0,0,22">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="72" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="HeadingText" Text="Add a Gmail account" FontSize="25" FontWeight="SemiBold" />
+                                <TextBlock x:Name="DescriptionText"
+                                           Text="Create an isolated profile, then sign in securely with Google."
+                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                                           TextWrapping="Wrap" Margin="0,6,18,0" />
+                            </StackPanel>
+                            <Border x:Name="PreviewAvatar" Grid.Column="1" Width="58" Height="58" CornerRadius="29"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center" Background="#FF2563EB">
+                                <Grid>
+                                <TextBlock x:Name="PreviewInitialsText" Text="G" Foreground="White"
+                                           FontSize="18" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Ellipse>
+                                        <Ellipse.Fill>
+                                            <ImageBrush x:Name="PreviewAvatarImageBrush" Stretch="UniformToFill" />
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <StackPanel>
+                            <TextBlock Text="Account name" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,7" />
+                            <TextBox x:Name="NameTextBox" Style="{StaticResource AccountTextBoxStyle}"
+                                     TextChanged="NameTextBox_TextChanged" MaxLength="60"
+                                     AutomationProperties.Name="Account name" />
+                            <TextBlock x:Name="NameValidationText" Text="Enter a name for this account."
+                                       Foreground="{DynamicResource DangerBrush}" FontSize="11"
+                                       Margin="2,5,0,0" Visibility="Collapsed" />
+                        </StackPanel>
+
+                        <StackPanel Margin="0,17,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                <TextBlock Text="Email address" FontWeight="SemiBold" FontSize="12" />
+                                <TextBlock Text="  Optional" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBox x:Name="EmailTextBox" Style="{StaticResource AccountTextBoxStyle}"
+                                     MaxLength="254" AutomationProperties.Name="Email address" />
+                            <TextBlock Text="Used only as a label in the sidebar—it does not sign you in."
+                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10.5" Margin="2,5,0,0" />
+                        </StackPanel>
+
+                        <StackPanel Margin="0,17,0,0">
+                            <TextBlock Text="Profile color" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,9" />
+                            <ItemsControl x:Name="ColorList">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <RadioButton GroupName="Colors" Tag="{Binding}" Checked="Color_Checked"
+                                                     HorizontalAlignment="Left" FocusVisualStyle="{x:Null}">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Grid Width="42" Height="42">
+                                                        <Ellipse x:Name="Halo" Stroke="{DynamicResource AccentBrush}"
+                                                                 StrokeThickness="2" Visibility="Collapsed" />
+                                                        <Ellipse Fill="{Binding}" Margin="4" />
+                                                        <Path x:Name="Check" Data="M2,7 L6,11 L14,3" Stroke="White"
+                                                              StrokeThickness="2.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                              Width="16" Height="14" Stretch="Uniform" Visibility="Collapsed"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="Halo" Property="Visibility" Value="Visible" />
+                                                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Opacity" Value="0.82" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <Border Background="{DynamicResource CardBackgroundBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="9" Padding="12,10" Margin="0,17,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Use Gmail profile photo" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="After sign-in, use the photo shown by Gmail. Colored initials remain as a fallback."
+                                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10.5"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <CheckBox x:Name="UseGmailAvatarCheckBox" Grid.Column="1"
+                                          Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center"
+                                          Checked="UseGmailAvatar_Changed" Unchecked="UseGmailAvatar_Changed"
+                                          AutomationProperties.Name="Use Gmail profile photo" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource ControlHoverBrush}" CornerRadius="9" Padding="12,10"
+                                Margin="0,18,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="30" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border Width="22" Height="22" CornerRadius="11" Background="#1812B76A" VerticalAlignment="Center">
+                                    <Path Data="M3,7 L7,11 L14,3" Stroke="#FF12B76A" StrokeThickness="1.8"
+                                          Width="13" Height="11" Stretch="Uniform" />
+                                </Border>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Google sign-in stays private" FontWeight="SemiBold" FontSize="11.5" />
+                                    <TextBlock Text="Credentials go directly to Google inside this profile; Gmail Desktop never receives your password."
+                                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10.5"
+                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border Grid.Row="2" Background="{DynamicResource CardBackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+                    <Grid Margin="24,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="FooterHintText" Text="A separate browser profile will be created on this PC."
+                                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10.5"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,14,0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="Cancel" Click="Cancel_Click" Style="{StaticResource SecondaryButtonStyle}"
+                                    Margin="0,0,10,0" />
+                            <Button x:Name="SaveButton" Content="Add account" Click="Save_Click"
+                                    Style="{StaticResource PrimaryButtonStyle}" Height="40" MinWidth="118"
+                                    IsDefault="True" AutomationProperties.Name="Add account" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                CornerRadius="13" Background="Transparent"
+                IsHitTestVisible="False" Panel.ZIndex="100" />
+    </Grid>
+</Window>
