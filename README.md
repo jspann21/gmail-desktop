@@ -56,6 +56,12 @@ See [SECURITY.md](SECURITY.md) for the full security model, implemented hardenin
 
 WebView2 is already installed on most current Windows systems. The included publish profile targets 64-bit Windows.
 
+## Install
+
+Download the `gmail-desktop-v*-windows-x64.exe` installer from the latest GitHub release and run it. The installer works per user, requires no administrator access, and places Gmail Desktop in `%LOCALAPPDATA%\Programs\Gmail Desktop`.
+
+Starting with version 1.1.0, releases use an installer instead of a standalone portable executable. Gmail Desktop depends on the native `WebView2Loader.dll`. When that DLL was embedded in the old single-file build, .NET extracted it under `%TEMP%`, where Windows or another cleanup utility could delete it while the app was still running and cause a later “DLL was not found” crash. The installer keeps the loader beside the application in its stable installation directory.
+
 ## Build and run
 
 Clone the repository, then run:
@@ -72,6 +78,12 @@ dotnet publish -p:PublishProfile=Windows-x64
 ```
 
 The published app is written to `bin\Release\publish`.
+
+To build the single-file installer after publishing, install [Inno Setup](https://jrsoftware.org/isinfo.php) and run:
+
+```powershell
+ISCC.exe installer.iss
+```
 
 ## Removing an account
 

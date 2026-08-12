@@ -2,6 +2,7 @@
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+/publish/
 
 # Visual Studio workspace and user-specific files
 .vs/

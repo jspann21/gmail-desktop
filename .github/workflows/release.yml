@@ -50,6 +50,26 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore GmailDesktop.csproj
 
+      - name: Prepare release notes
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.assembly }}'
+          $content = Get-Content CHANGELOG.md
+          $start = [Array]::FindIndex($content, [Predicate[string]] { param($line) $line -match "^## \[$([regex]::Escape($version))\]" })
+          if ($start -lt 0) {
+            throw "CHANGELOG.md has no entry for version $version."
+          }
+
+          $end = $content.Count
+          for ($index = $start + 1; $index -lt $content.Count; $index++) {
+            if ($content[$index] -match '^## \[') {
+              $end = $index
+              break
+            }
+          }
+
+          $content[($start + 1)..($end - 1)] | Set-Content release-notes.md
+
       - name: Publish Windows executable
         shell: pwsh
         run: |
@@ -64,15 +84,30 @@ jobs:
             -p:DebugType=none `
             -p:DebugSymbols=false
 
-          Move-Item `
-            -LiteralPath publish/GmailDesktop.exe `
-            -Destination "publish/${{ steps.version.outputs.asset }}"
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $compiler = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $compiler) {
+            $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            $compiler = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            throw "Inno Setup compiler was not found on the GitHub runner."
+          }
+
+          & $compiler `
+            "/DAppVersion=${{ steps.version.outputs.assembly }}" `
+            "/DOutputBaseFilename=$([IO.Path]::GetFileNameWithoutExtension('${{ steps.version.outputs.asset }}'))" `
+            installer.iss
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: gmail-desktop-${{ steps.version.outputs.release }}-windows-x64
-          path: publish/${{ steps.version.outputs.asset }}
+          path: installer-output/${{ steps.version.outputs.asset }}
           if-no-files-found: error
 
       - name: Create GitHub release
@@ -80,10 +115,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.version.outputs.release }}
-          RELEASE_ASSET: publish/${{ steps.version.outputs.asset }}
+          RELEASE_ASSET: installer-output/${{ steps.version.outputs.asset }}
         run: |
           gh release create $env:RELEASE_VERSION $env:RELEASE_ASSET `
             --repo $env:GITHUB_REPOSITORY `
             --target $env:GITHUB_SHA `
             --title "Gmail Desktop $env:RELEASE_VERSION" `
-            --generate-notes
+            --notes-file release-notes.md
