@@ -16,7 +16,7 @@ Gmail Desktop is deliberately a small native shell around Microsoft's Evergreen 
 ## WebView2 hardening
 
 - Gmail, its official `gmail.com` entry aliases, and Google Account sign-in pages remain embedded. While a sign-in is actively in progress, HTTPS handoffs on Google-owned `google.com`, `googleusercontent.com`, `googleapis.com`, and `gstatic.com` hosts, plus Google's `accounts.youtube.com` session-synchronization endpoint, remain in the same isolated WebView2 profile so multi-step authentication can complete. Gmail welcome-page inbox popups are redirected to the canonical inbox inside that profile. Once Gmail finishes loading, the temporary handoff allowance is disabled.
-- For federated Google Workspace accounts, an external HTTPS identity-provider host is admitted only when it is introduced by a redirect from Google's `accounts.google.com/samlredirect` endpoint. Redirects within that bounded federation chain may add up to five HTTPS hosts. The temporary host set is isolated to one account session and cleared as soon as Gmail loads.
+- For federated Google Workspace accounts, an external HTTPS identity-provider host is admitted only when it is introduced during an active Gmail sign-in by Google's `accounts.google.com` flow. HTTPS redirects, form navigations, and authentication popups within that bounded federation chain may add up to five hosts so multi-provider university MFA can finish in the same profile. The temporary host set is isolated to one account session and cleared as soon as Gmail loads.
 - External HTTP/HTTPS and `mailto:` links are handed to the Windows default application. Other schemes are rejected.
 - TLS certificate errors are cancelled. The application never bypasses a certificate warning.
 - DevTools, native host objects, web messaging, browser extensions, password saving, general autofill, and default JavaScript dialogs are disabled.
@@ -57,4 +57,3 @@ For stronger protection, use Windows Hello, full-disk encryption, Google passkey
 - [Manage WebView2 user data folders](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder)
 - [Clear browsing data from WebView2 profiles](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/clear-browsing-data)
 - [Windows/.NET Data Protection API](https://learn.microsoft.com/en-us/dotnet/standard/security/how-to-use-data-protection)
-

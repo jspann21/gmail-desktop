@@ -24,6 +24,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         public AccountProfile Account { get; } = account;
         public WebView2CompositionControl View { get; } = view;
         public ulong? NavigationId { get; set; }
+        public string? LastAllowedNavigationUri { get; set; }
         public bool IsAuthenticating { get; set; }
         public bool IsAwaitingFederatedRedirect { get; set; }
         public HashSet<string> FederatedAuthenticationHosts { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -305,19 +306,28 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         core.NavigationStarting += (_, args) =>
         {
             session.AvatarDiscoveryGeneration++;
+            var navigationSource = session.NavigationId == args.NavigationId
+                ? session.LastAllowedNavigationUri
+                : core.Source;
             var isAuthenticationPage = IsGoogleAuthenticationUri(args.Uri);
             if (isAuthenticationPage)
                 session.IsAuthenticating = true;
-            if (IsGoogleSamlRedirectUri(args.Uri))
+            if (IsGoogleFederationHandoffUri(args.Uri))
                 session.IsAwaitingFederatedRedirect = true;
 
-            var isAllowed = IsAllowedEmbeddedUri(args.Uri) ||
-                            (session.IsAuthenticating && IsTrustedGoogleAuthenticationHandoffUri(args.Uri)) ||
-                            IsAllowedFederatedAuthenticationNavigation(session, args, core.Source);
+            var isEmbedded = IsAllowedEmbeddedUri(args.Uri);
+            var isTrustedGoogleHandoff = !isEmbedded &&
+                                         session.IsAuthenticating &&
+                                         IsTrustedGoogleAuthenticationHandoffUri(args.Uri);
+            var isFederated = !isEmbedded &&
+                              !isTrustedGoogleHandoff &&
+                              IsAllowedFederatedAuthenticationNavigation(session, args, navigationSource);
+            var isAllowed = isEmbedded || isTrustedGoogleHandoff || isFederated;
 
             if (isAllowed)
             {
                 session.NavigationId = args.NavigationId;
+                session.LastAllowedNavigationUri = args.Uri;
                 ReportStatus(account, new BrowserStatusEventArgs(
                     $"Loading {account.DisplayName}…",
                     isBusy: true));
@@ -325,6 +335,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             }
             args.Cancel = true;
             session.NavigationId = null;
+            session.LastAllowedNavigationUri = null;
             session.ExternallyHandledNavigationIds.Add(args.NavigationId);
             ReportStatus(account, new BrowserStatusEventArgs(string.Empty));
             if (args.IsUserInitiated)
@@ -353,6 +364,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             if (session.NavigationId != args.NavigationId) return;
 
             session.NavigationId = null;
+            session.LastAllowedNavigationUri = null;
             if (!args.IsSuccess)
             {
                 ReportStatus(account, new BrowserStatusEventArgs(
@@ -395,9 +407,16 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             if (IsGoogleAuthenticationUri(args.Uri))
                 session.IsAuthenticating = true;
 
-            if (IsAllowedEmbeddedUri(args.Uri) ||
-                (session.IsAuthenticating && IsTrustedGoogleAuthenticationHandoffUri(args.Uri)) ||
-                IsAllowedFederatedPopup(session, args.Uri, core.Source))
+            var isEmbedded = IsAllowedEmbeddedUri(args.Uri);
+            var isTrustedGoogleHandoff = !isEmbedded &&
+                                         session.IsAuthenticating &&
+                                         IsTrustedGoogleAuthenticationHandoffUri(args.Uri);
+            var isFederated = !isEmbedded &&
+                              !isTrustedGoogleHandoff &&
+                              IsAllowedFederatedPopup(session, args.Uri, core.Source);
+            var isAllowed = isEmbedded || isTrustedGoogleHandoff || isFederated;
+
+            if (isAllowed)
             {
                 core.Navigate(args.Uri);
             }
@@ -621,11 +640,23 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
                uri.AbsolutePath.Contains("/about", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsGoogleSamlRedirectUri(string? value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-        uri.Scheme == Uri.UriSchemeHttps &&
-        uri.Host.Equals("accounts.google.com", StringComparison.OrdinalIgnoreCase) &&
-        uri.AbsolutePath.Equals("/samlredirect", StringComparison.OrdinalIgnoreCase);
+    private static bool IsGoogleFederationHandoffUri(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !uri.Host.Equals("accounts.google.com", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (uri.AbsolutePath.Equals("/samlredirect", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Expired Workspace sessions now commonly resume through versioned
+        // /signin/continue pages before Google hands the browser to the IdP.
+        // Only treat that page as a federation boundary when it is returning
+        // to Gmail; other Google Account continuation flows stay constrained.
+        return uri.AbsolutePath.EndsWith("/signin/continue", StringComparison.OrdinalIgnoreCase) &&
+               ContainsGmailDestination(value);
+    }
 
     private static bool IsAllowedFederatedAuthenticationNavigation(
         Session session,
@@ -640,11 +671,18 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         if (session.FederatedAuthenticationHosts.Contains(target.Host))
             return true;
 
-        var sourceIsFederated = Uri.TryCreate(currentSource, UriKind.Absolute, out var source) &&
-                                session.FederatedAuthenticationHosts.Contains(source.Host);
-        var mayExtendFederationChain = args.IsRedirected &&
-                                       session.FederatedAuthenticationHosts.Count < 5 &&
-                                       (session.IsAwaitingFederatedRedirect || sourceIsFederated);
+        var hasSource = Uri.TryCreate(currentSource, UriKind.Absolute, out var source);
+        var sourceIsFederated = hasSource &&
+                                session.FederatedAuthenticationHosts.Contains(source!.Host);
+        var sourceIsGoogleAuthentication = hasSource &&
+                                           IsGoogleAuthenticationUri(source!.AbsoluteUri);
+        var isInitialGoogleHandoff = session.IsAwaitingFederatedRedirect &&
+                                     session.FederatedAuthenticationHosts.Count == 0 &&
+                                     args.IsRedirected;
+        isInitialGoogleHandoff |= session.FederatedAuthenticationHosts.Count == 0 &&
+                                  sourceIsGoogleAuthentication;
+        var mayExtendFederationChain = session.FederatedAuthenticationHosts.Count < 5 &&
+                                       (isInitialGoogleHandoff || sourceIsFederated);
         if (!mayExtendFederationChain)
             return false;
 
@@ -658,12 +696,29 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         if (!session.IsAuthenticating ||
             !Uri.TryCreate(targetValue, UriKind.Absolute, out var target) ||
             target.Scheme != Uri.UriSchemeHttps ||
-            !Uri.TryCreate(sourceValue, UriKind.Absolute, out var source) ||
-            !session.FederatedAuthenticationHosts.Contains(source.Host))
+            !Uri.TryCreate(sourceValue, UriKind.Absolute, out var source))
             return false;
 
-        return session.FederatedAuthenticationHosts.Contains(target.Host) ||
-               IsTrustedGoogleAuthenticationHandoffUri(targetValue);
+        if (session.FederatedAuthenticationHosts.Contains(source.Host))
+        {
+            if (session.FederatedAuthenticationHosts.Contains(target.Host) ||
+                IsTrustedGoogleAuthenticationHandoffUri(targetValue))
+                return true;
+
+            if (session.FederatedAuthenticationHosts.Count >= 5)
+                return false;
+
+            session.FederatedAuthenticationHosts.Add(target.Host);
+            return true;
+        }
+
+        if (session.FederatedAuthenticationHosts.Count != 0 ||
+            !IsGoogleAuthenticationUri(sourceValue))
+            return false;
+
+        session.IsAwaitingFederatedRedirect = false;
+        session.FederatedAuthenticationHosts.Add(target.Host);
+        return true;
     }
 
     private static bool ContainsGmailDestination(string? value)

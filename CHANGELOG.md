@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.1] - 2026-08-19
+
+- Fixed reauthentication for federated university and Workspace accounts, including direct Google `ServiceLogin` handoffs and newer `signin/continue` flows.
+
 ## [1.1.0] - 2026-08-12
 
 - Replaced the portable release executable with a single per-user Windows installer.
