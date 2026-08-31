@@ -605,20 +605,72 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         var generation = ++session.AvatarDiscoveryGeneration;
         const string findAvatarScript = """
             (() => {
-                const selectors = [
-                    'a[href*="accounts.google.com/SignOutOptions"] img[src]',
-                    'a[href*="/SignOutOptions"] img[src]',
-                    'a[href*="accounts.google.com/AccountChooser"] img[src]',
-                    'a[href*="accounts.google.com/ManageAccount"] img[src]',
-                    'a[aria-label*="Google Account"] img[src]',
-                    'button[aria-label*="Google Account"] img[src]'
-                ];
+                const isGoogleAvatarUrl = value => {
+                    if (!value) return null;
+                    try {
+                        const url = new URL(value, document.baseURI);
+                        const host = url.hostname.toLowerCase();
+                        const allowedHost = host === 'googleusercontent.com' ||
+                            host.endsWith('.googleusercontent.com') ||
+                            host === 'ggpht.com' ||
+                            host.endsWith('.ggpht.com');
+                        return url.protocol === 'https:' && allowedHost ? url.href : null;
+                    } catch {
+                        return null;
+                    }
+                };
 
-                for (const selector of selectors) {
-                    const image = document.querySelector(selector);
-                    const source = image?.currentSrc || image?.src;
-                    if (source) return source;
+                const sourceFrom = element => {
+                    const directSources = [
+                        element.getAttribute?.('data-src'),
+                        element.getAttribute?.('data-lazy-src'),
+                        element.currentSrc,
+                        element.getAttribute?.('src')
+                    ];
+                    for (const source of directSources) {
+                        const avatarUrl = isGoogleAvatarUrl(source);
+                        if (avatarUrl) return avatarUrl;
+                    }
+
+                    const backgrounds = [
+                        element.style?.backgroundImage,
+                        getComputedStyle(element).backgroundImage
+                    ];
+                    for (const background of backgrounds) {
+                        const match = /url\(["']?(.+?)["']?\)/i.exec(background ?? '');
+                        const avatarUrl = isGoogleAvatarUrl(match?.[1]);
+                        if (avatarUrl) return avatarUrl;
+                    }
+
+                    return null;
+                };
+
+                const accountControls = [
+                    ...document.querySelectorAll('#gb a[href*="accounts.google.com"]'),
+                    ...document.querySelectorAll('#gb [data-ogsr-up]'),
+                    ...document.querySelectorAll('a[href*="/SignOutOptions"]'),
+                    ...document.querySelectorAll('a[href*="/AccountChooser"]'),
+                    ...document.querySelectorAll('a[href*="/ManageAccount"]')
+                ];
+                const candidates = new Set();
+                for (const control of accountControls) {
+                    candidates.add(control);
+                    for (const descendant of control.querySelectorAll('img, [data-src], [style*="background"]'))
+                        candidates.add(descendant);
                 }
+
+                // The One Google Bar changes its wrapper elements regularly. Its
+                // location is stable, so use its image-bearing elements as a
+                // constrained fallback without depending on localized labels.
+                for (const element of document.querySelectorAll(
+                    '#gb img, #gb [data-src], #gb [style*="background-image"]'))
+                    candidates.add(element);
+
+                for (const candidate of candidates) {
+                    const avatarUrl = sourceFrom(candidate);
+                    if (avatarUrl) return avatarUrl;
+                }
+
                 return null;
             })()
             """;
@@ -647,6 +699,15 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
                 {
                     var previousUrl = session.Account.GmailAvatarUrl;
                     session.Account.GmailAvatarUrl = avatarUrl;
+                    // Gmail lazy-loads the account image through transparent data
+                    // URLs in some layouts. The model intentionally rejects those;
+                    // keep looking instead of treating the placeholder as success.
+                    if (string.IsNullOrWhiteSpace(session.Account.GmailAvatarUrl))
+                    {
+                        await Task.Delay(650);
+                        continue;
+                    }
+
                     if (!string.Equals(previousUrl, session.Account.GmailAvatarUrl, StringComparison.Ordinal))
                         AccountNavigationChanged?.Invoke(this, session.Account);
                     return;
