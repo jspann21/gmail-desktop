@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0] - 2026-08-31
+
+- Added support for dropping files directly into Gmail drafts as attachments.
+- Improved Gmail profile photo discovery, including more reliable detection when profile imagery loads or changes dynamically.
+
 ## [1.1.1] - 2026-08-19
 
 - Fixed reauthentication for federated university and Workspace accounts, including direct Google `ServiceLogin` handoffs and newer `signin/continue` flows.
