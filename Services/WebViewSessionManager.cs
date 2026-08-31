@@ -234,6 +234,11 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
+            AllowDrop = true,
+            // WebView2CompositionControl does not currently forward external file
+            // drops reliably. Handle the WPF drop below and give the files to
+            // Gmail's own attachment input instead.
+            AllowExternalDrop = false,
             // The composition control must have a realized, visible WPF surface
             // before WebView2 initializes its capture target. Initializing it while
             // Collapsed can leave navigation running behind a permanently blank image.
@@ -288,6 +293,9 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         core.Settings.IsReputationCheckingRequired = true;
         core.Settings.IsZoomControlEnabled = true;
         core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+
+        view.PreviewDragOver += (_, args) => HandleFileDragOver(session, args);
+        view.PreviewDrop += async (_, args) => await HandleFileDropAsync(session, args);
 
         await core.Profile.ClearBrowsingDataAsync(
             CoreWebView2BrowsingDataKinds.PasswordAutosave |
@@ -468,6 +476,128 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         core.ProcessFailed += (_, _) => ReportStatus(account, new BrowserStatusEventArgs(
             "The Gmail browser process stopped unexpectedly. Select Retry to reopen it.",
             isError: true));
+    }
+
+    private static void HandleFileDragOver(Session session, DragEventArgs args)
+    {
+        if (!IsGmailUri(session.View.CoreWebView2?.Source) || !ContainsFiles(args.Data))
+            return;
+
+        args.Effects = DragDropEffects.Copy;
+        args.Handled = true;
+    }
+
+    private async Task HandleFileDropAsync(Session session, DragEventArgs args)
+    {
+        if (!IsGmailUri(session.View.CoreWebView2?.Source) ||
+            args.Data.GetData(DataFormats.FileDrop, true) is not string[] droppedPaths)
+            return;
+
+        var dropPoint = args.GetPosition(session.View);
+        var files = droppedPaths
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        args.Effects = files.Length > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+        args.Handled = true;
+        if (files.Length == 0) return;
+
+        try
+        {
+            var attached = await AttachFilesAtPointAsync(session, dropPoint, files);
+            var message = attached
+                ? files.Length == 1
+                    ? $"Adding {Path.GetFileName(files[0])} to the draft…"
+                    : $"Adding {files.Length} files to the draft…"
+                : "Drop files directly onto an open reply or compose message box.";
+            ReportStatus(session.Account, new BrowserStatusEventArgs(message));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or
+                                   JsonException or System.Runtime.InteropServices.COMException)
+        {
+            ReportStatus(session.Account, new BrowserStatusEventArgs(
+                "Gmail could not add the dropped file. Try the paperclip button instead."));
+        }
+    }
+
+    private static bool ContainsFiles(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop, true) &&
+        data.GetData(DataFormats.FileDrop, true) is string[] paths &&
+        paths.Any(File.Exists);
+
+    private static async Task<bool> AttachFilesAtPointAsync(
+        Session session,
+        Point dropPoint,
+        string[] files)
+    {
+        var core = session.View.CoreWebView2;
+        var pointJson = JsonSerializer.Serialize(new { x = dropPoint.X, y = dropPoint.Y });
+        var expression = $$"""
+            (() => {
+                const point = {{pointJson}};
+                const hit = document.elementFromPoint(point.x, point.y);
+                const editor = hit?.closest?.('[contenteditable="true"]');
+                if (!editor) return null;
+
+                for (let container = editor; container && container !== document.body; container = container.parentElement) {
+                    const inputs = Array.from(
+                        container.querySelectorAll?.('input[type="file"]:not([disabled])') ?? []
+                    );
+                    if (inputs.length === 0) continue;
+
+                    return inputs.find(input =>
+                        input.name === 'Filedata' ||
+                        input.multiple ||
+                        /attach|file/i.test(`${input.name} ${input.id} ${input.getAttribute('aria-label') ?? ''}`)
+                    ) ?? inputs[0];
+                }
+
+                return null;
+            })()
+            """;
+        var objectGroup = $"gmailDesktopDrop-{Guid.NewGuid():N}";
+
+        try
+        {
+            var evaluationJson = await core.CallDevToolsProtocolMethodAsync(
+                "Runtime.evaluate",
+                JsonSerializer.Serialize(new
+                {
+                    expression,
+                    objectGroup,
+                    silent = true,
+                    returnByValue = false,
+                    userGesture = true
+                }));
+            using var evaluation = JsonDocument.Parse(evaluationJson);
+            if (!evaluation.RootElement.TryGetProperty("result", out var result) ||
+                !result.TryGetProperty("objectId", out var objectIdElement))
+                return false;
+
+            var objectId = objectIdElement.GetString();
+            if (string.IsNullOrWhiteSpace(objectId)) return false;
+
+            await core.CallDevToolsProtocolMethodAsync(
+                "DOM.setFileInputFiles",
+                JsonSerializer.Serialize(new { files, objectId }));
+            return true;
+        }
+        finally
+        {
+            try
+            {
+                await core.CallDevToolsProtocolMethodAsync(
+                    "Runtime.releaseObjectGroup",
+                    JsonSerializer.Serialize(new { objectGroup }));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or
+                                       System.Runtime.InteropServices.COMException)
+            {
+                // Navigation or disposal can release the remote objects first.
+            }
+        }
     }
 
     private async Task DiscoverGmailAvatarAsync(Session session)
