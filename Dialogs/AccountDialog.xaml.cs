@@ -14,6 +14,7 @@ public partial class AccountDialog : Window
 
     private string _selectedColor = Colors[0];
     private string _gmailAvatarUrl = string.Empty;
+    private BitmapImage? _gmailAvatarImage;
 
     public string AccountName => NameTextBox.Text.Trim();
     public string Email => EmailTextBox.Text.Trim();
@@ -104,11 +105,14 @@ public partial class AccountDialog : Window
     {
         if (PreviewAvatar is null || PreviewInitialsText is null) return;
         PreviewAvatar.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_selectedColor));
-        PreviewAvatarImageBrush.ImageSource = null;
         if (UseGmailAvatarCheckBox?.IsChecked == true &&
             Uri.TryCreate(_gmailAvatarUrl, UriKind.Absolute, out var avatarUri))
         {
-            PreviewAvatarImageBrush.ImageSource = new BitmapImage(avatarUri);
+            PreviewAvatarImageBrush.ImageSource = _gmailAvatarImage ??= new BitmapImage(avatarUri);
+        }
+        else
+        {
+            PreviewAvatarImageBrush.ImageSource = null;
         }
 
         var source = NameTextBox?.Text.Trim() ?? string.Empty;

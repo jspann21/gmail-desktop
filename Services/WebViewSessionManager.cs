@@ -523,9 +523,9 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     }
 
     private static bool ContainsFiles(IDataObject data) =>
-        data.GetDataPresent(DataFormats.FileDrop, true) &&
-        data.GetData(DataFormats.FileDrop, true) is string[] paths &&
-        paths.Any(File.Exists);
+        // Drag-over runs on every pointer movement. Inspect the format here;
+        // accessing file metadata (especially on network shares) waits until drop.
+        data.GetDataPresent(DataFormats.FileDrop, true);
 
     private static async Task<bool> AttachFilesAtPointAsync(
         Session session,

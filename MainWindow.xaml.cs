@@ -30,6 +30,8 @@ public partial class MainWindow : Window
     private HwndSource? _windowSource;
     private AccountProfile? _selectedAccount;
     private bool _isExiting;
+    private bool _isClosed;
+    private readonly HashSet<string> _removingAccountIds = [];
     private bool _hasShownTrayHint;
     private Point _accountDragStart;
     private Point _accountDragOffset;
@@ -117,6 +119,9 @@ public partial class MainWindow : Window
 
     private async Task SelectAccountAsync(AccountProfile account)
     {
+        if (_isExiting || _isClosed || !Accounts.Contains(account) || _removingAccountIds.Contains(account.Id))
+            return;
+
         _selectedAccount = account;
         foreach (var item in Accounts) item.IsSelected = item.Id == account.Id;
 
@@ -393,14 +398,13 @@ public partial class MainWindow : Window
         };
 
         Accounts.Add(account);
-        SaveSettings();
         await SelectAccountAsync(account);
     }
 
     private void RenameAccount_Click(object sender, RoutedEventArgs e)
     {
         var account = GetContextAccount(sender);
-        if (account is null) return;
+        if (account is null || _removingAccountIds.Contains(account.Id)) return;
 
         var dialog = new AccountDialog(account) { Owner = this };
         if (dialog.ShowDialog() != true) return;
@@ -424,7 +428,7 @@ public partial class MainWindow : Window
     private async void RemoveAccount_Click(object sender, RoutedEventArgs e)
     {
         var account = GetContextAccount(sender);
-        if (account is null) return;
+        if (account is null || _isExiting || _isClosed || _removingAccountIds.Contains(account.Id)) return;
 
         var result = MessageBox.Show(
             this,
@@ -434,38 +438,50 @@ public partial class MainWindow : Window
             MessageBoxImage.Warning);
         if (result != MessageBoxResult.Yes) return;
 
-        var index = Accounts.IndexOf(account);
-        var wasSelected = _selectedAccount?.Id == account.Id;
-        await _sessionManager.ClearAndDisposeSessionAsync(account.Id);
-        Accounts.Remove(account);
-        SaveSettings();
-
-        var profileRemoval = _settingsService.DeleteProfileAsync(account);
-        if (wasSelected)
+        if (!_removingAccountIds.Add(account.Id)) return;
+        try
         {
-            _selectedAccount = null;
-            if (Accounts.Count == 0)
+            await _sessionManager.ClearAndDisposeSessionAsync(account.Id);
+            if (_isExiting || _isClosed) return;
+
+            var index = Accounts.IndexOf(account);
+            var wasSelected = _selectedAccount?.Id == account.Id;
+            Accounts.Remove(account);
+            SaveSettings();
+
+            var profileRemoval = _settingsService.DeleteProfileAsync(account);
+            if (wasSelected)
             {
-                _settings.SelectedAccountId = null;
-                SaveSettings();
-                ShowWelcome();
+                _selectedAccount = null;
+                var availableAccounts = Accounts.Where(item => !_removingAccountIds.Contains(item.Id)).ToList();
+                if (availableAccounts.Count == 0)
+                {
+                    _settings.SelectedAccountId = null;
+                    SaveSettings();
+                    ShowWelcome();
+                }
+                else
+                {
+                    await SelectAccountAsync(availableAccounts[Math.Clamp(index, 0, availableAccounts.Count - 1)]);
+                }
             }
-            else
+
+            var profileRemoved = await profileRemoval;
+            if (!_isExiting && !_isClosed && !profileRemoved)
             {
-                await SelectAccountAsync(Accounts[Math.Min(index, Accounts.Count - 1)]);
+                MessageBox.Show(
+                    this,
+                    $"The account was removed, but its browser data could not be deleted. Close Gmail Desktop and delete this folder manually:\n\n{_settingsService.GetProfileDirectory(account)}",
+                    "Browser data could not be deleted",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
         }
-
-        var profileRemoved = await profileRemoval;
-        if (!profileRemoved)
+        catch (ObjectDisposedException) when (_isExiting || _isClosed)
         {
-            MessageBox.Show(
-                this,
-                $"The account was removed, but its browser data could not be deleted. Close Gmail Desktop and delete this folder manually:\n\n{_settingsService.GetProfileDirectory(account)}",
-                "Browser data could not be deleted",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            // Closing the window can dispose the browser while removal is awaiting its lock.
         }
+        finally { _removingAccountIds.Remove(account.Id); }
     }
 
     private async void Settings_Click(object sender, RoutedEventArgs e)
@@ -597,8 +613,8 @@ public partial class MainWindow : Window
 
         if (index >= 0 && index < Accounts.Count)
         {
-            await SelectAccountAsync(Accounts[index]);
             e.Handled = true;
+            await SelectAccountAsync(Accounts[index]);
         }
     }
 
@@ -652,6 +668,7 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
+        _saveTimer.Stop();
         _settings.Accounts = Accounts.ToList();
         _settingsService.Save(_settings);
     }
@@ -721,6 +738,7 @@ public partial class MainWindow : Window
 
     private void Window_Closed(object? sender, EventArgs e)
     {
+        _isClosed = true;
         _windowSource?.RemoveHook(WindowMessageHook);
         _windowSource = null;
         if (_trayMenu is { IsClosing: false } trayMenu) trayMenu.Close();

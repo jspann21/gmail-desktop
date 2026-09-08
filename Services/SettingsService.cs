@@ -111,6 +111,9 @@ public sealed class SettingsService
 
     public string GetProfileDirectory(AccountProfile account)
     {
+        if (account.Id.Length != 32 || !Guid.TryParseExact(account.Id, "N", out _))
+            throw new InvalidOperationException("The browser profile ID is invalid.");
+
         var profilePath = Path.GetFullPath(Path.Combine(ProfilesDirectory, account.Id));
         var rootPath = Path.GetFullPath(ProfilesDirectory) + Path.DirectorySeparatorChar;
         if (!profilePath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
@@ -188,17 +191,12 @@ public sealed class SettingsService
 
     private void PreserveUnreadableEncryptedSettings()
     {
-        try
-        {
-            var backupPath = Path.Combine(
-                AppDataDirectory,
-                $"settings.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}.dat");
-            File.Move(SettingsPath, backupPath, overwrite: true);
-        }
-        catch
-        {
-            // Preserve the original file if it cannot be moved safely.
-        }
+        var backupPath = Path.Combine(
+            AppDataDirectory,
+            $"settings.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.dat");
+        // Do not return empty settings if preservation fails: a later save would
+        // overwrite the only recoverable copy of the account metadata.
+        File.Move(SettingsPath, backupPath);
     }
 
     private static AppSettings Normalize(AppSettings settings)
