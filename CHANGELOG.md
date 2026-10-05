@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Refreshing an expired federated sign-in now starts a fresh Gmail authentication request instead of reloading stale SAML state.
+
 ## [1.2.0] - 2026-08-31
 
 - Added support for dropping files directly into Gmail drafts as attachments.

@@ -155,6 +155,15 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             session.ProcessFailure is null &&
             session.View.CoreWebView2 is not null)
         {
+            // Federated sign-in pages can contain a one-time SAML request. Reloading
+            // one after it expires may fail or try to resubmit stale authentication
+            // state, so begin a new Gmail sign-in flow instead.
+            if (session.IsAuthenticating && !IsGmailUri(session.View.CoreWebView2.Source))
+            {
+                RestartAuthentication(session);
+                return;
+            }
+
             session.View.Reload();
         }
     }
@@ -168,8 +177,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             session.View.CoreWebView2 is null)
             return;
 
-        session.IsAuthenticating = true;
-        session.View.CoreWebView2.Navigate(GmailInboxUrl);
+        RestartAuthentication(session);
     }
 
     public void RefreshGmailAvatar(AccountProfile account)
@@ -870,6 +878,15 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         session.Status = status;
         if (_activeAccountId == session.Account.Id && _requestedAccountId == session.Account.Id)
             StatusChanged?.Invoke(this, status);
+    }
+
+    private static void RestartAuthentication(Session session)
+    {
+        session.IsAuthenticating = true;
+        session.IsAwaitingFederatedRedirect = false;
+        session.FederatedAuthenticationHosts.Clear();
+        session.LastAllowedNavigationUri = null;
+        session.View.CoreWebView2.Navigate(GmailInboxUrl);
     }
 
     private static bool IsSafePersistedGmailUrl(string? uri) =>
