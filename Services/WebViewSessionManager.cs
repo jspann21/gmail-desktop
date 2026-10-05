@@ -30,6 +30,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         public HashSet<string> FederatedAuthenticationHosts { get; } = new(StringComparer.OrdinalIgnoreCase);
         public int AvatarDiscoveryGeneration { get; set; }
         public HashSet<ulong> ExternallyHandledNavigationIds { get; } = [];
+        public BrowserStatusEventArgs Status { get; set; } = new(string.Empty);
+        public BrowserStatusEventArgs? ProcessFailure { get; set; }
     }
 
     private readonly Dictionary<string, Session> _sessions = [];
@@ -47,7 +49,11 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         try
         {
             ThrowIfDisposed();
-            if (_activeAccountId == account.Id && _sessions.ContainsKey(account.Id)) return;
+            if (_activeAccountId == account.Id && _sessions.TryGetValue(account.Id, out var activeSession))
+            {
+                ReportStatus(activeSession, activeSession.Status);
+                return;
+            }
 
             var oldActiveId = _activeAccountId;
             if (oldActiveId is not null && _sessions.TryGetValue(oldActiveId, out var oldSession))
@@ -65,17 +71,19 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
             var session = await GetOrCreateSessionAsync(account);
             ThrowIfDisposed();
-            // Composition-backed views need a realized WPF surface before their
-            // browser capture is resumed, or account switches can return a blank image.
-            session.View.Visibility = Visibility.Visible;
-            session.View.UpdateLayout();
-            if (session.View.CoreWebView2.IsSuspended)
-                session.View.CoreWebView2.Resume();
-            session.View.Focus();
+            if (session.ProcessFailure is null)
+            {
+                // Composition-backed views need a realized WPF surface before their
+                // browser capture is resumed, or account switches can return a blank image.
+                session.View.Visibility = Visibility.Visible;
+                session.View.UpdateLayout();
+                if (session.View.CoreWebView2.IsSuspended)
+                    session.View.CoreWebView2.Resume();
+                session.View.Focus();
+            }
 
             await ReconcileSessionsCoreAsync(mode);
-            if (session.NavigationId is null)
-                ReportStatus(account, new BrowserStatusEventArgs(string.Empty));
+            ReportStatus(session, session.Status);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -116,6 +124,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     {
         if (_activeAccountId is not null &&
             _sessions.TryGetValue(_activeAccountId, out var session) &&
+            session.ProcessFailure is null &&
             session.View.CoreWebView2 is not null)
         {
             session.View.Reload();
@@ -126,6 +135,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     {
         if (_activeAccountId is null ||
             !_sessions.TryGetValue(_activeAccountId, out var session) ||
+            session.ProcessFailure is not null ||
             session.View.CoreWebView2 is null)
             return;
 
@@ -137,6 +147,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     {
         if (!account.UseGmailAvatar ||
             !_sessions.TryGetValue(account.Id, out var session) ||
+            session.ProcessFailure is not null ||
             session.View.CoreWebView2 is null ||
             !IsGmailUri(session.View.CoreWebView2.Source))
             return;
@@ -148,6 +159,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     {
         if (_activeAccountId is not null &&
             _sessions.TryGetValue(_activeAccountId, out var session) &&
+            session.ProcessFailure is null &&
             session.View.CanGoBack)
         {
             session.View.GoBack();
@@ -158,6 +170,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     {
         foreach (var session in _sessions.Values)
         {
+            if (session.ProcessFailure is not null) continue;
+
             session.View.DefaultBackgroundColor = ThemeService.IsDark
                 ? System.Drawing.Color.FromArgb(32, 37, 43)
                 : System.Drawing.Color.White;
@@ -313,7 +327,6 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
         core.NavigationStarting += (_, args) =>
         {
-            session.AvatarDiscoveryGeneration++;
             var navigationSource = session.NavigationId == args.NavigationId
                 ? session.LastAllowedNavigationUri
                 : core.Source;
@@ -334,18 +347,22 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
             if (isAllowed)
             {
+                session.AvatarDiscoveryGeneration++;
                 session.NavigationId = args.NavigationId;
                 session.LastAllowedNavigationUri = args.Uri;
-                ReportStatus(account, new BrowserStatusEventArgs(
+                ReportStatus(session, new BrowserStatusEventArgs(
                     $"Loading {account.DisplayName}…",
                     isBusy: true));
                 return;
             }
             args.Cancel = true;
-            session.NavigationId = null;
-            session.LastAllowedNavigationUri = null;
             session.ExternallyHandledNavigationIds.Add(args.NavigationId);
-            ReportStatus(account, new BrowserStatusEventArgs(string.Empty));
+            if (session.NavigationId == args.NavigationId)
+            {
+                session.NavigationId = null;
+                session.LastAllowedNavigationUri = null;
+                ReportStatus(session, new BrowserStatusEventArgs(string.Empty));
+            }
             if (args.IsUserInitiated)
                 OpenInDefaultBrowser(args.Uri);
         };
@@ -375,7 +392,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             session.LastAllowedNavigationUri = null;
             if (!args.IsSuccess)
             {
-                ReportStatus(account, new BrowserStatusEventArgs(
+                ReportStatus(session, new BrowserStatusEventArgs(
                     "Gmail did not finish loading. Check your connection and try again.",
                     isError: true));
                 return;
@@ -390,7 +407,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
                     _ = DiscoverGmailAvatarAsync(session);
             }
             SaveCurrentUrl(session);
-            ReportStatus(account, new BrowserStatusEventArgs(string.Empty));
+            ReportStatus(session, new BrowserStatusEventArgs(string.Empty));
         };
 
         core.SourceChanged += (_, _) => SaveCurrentUrl(session);
@@ -443,7 +460,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             {
                 view.Dispatcher.BeginInvoke(() =>
                 {
-                    if (!_disposed && session.View.CoreWebView2 is not null)
+                    if (IsCurrentSession(session) && session.ProcessFailure is null &&
+                        session.View.CoreWebView2 is not null)
                     {
                         session.View.CoreWebView2.Navigate(GmailInboxUrl);
                     }
@@ -454,7 +472,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         core.DownloadStarting += (_, args) =>
         {
             var fileName = Path.GetFileName(args.ResultFilePath);
-            ReportStatus(account, new BrowserStatusEventArgs($"Downloading {fileName}…"));
+            ReportStatus(session, new BrowserStatusEventArgs($"Downloading {fileName}…"));
             var operation = args.DownloadOperation;
             operation.StateChanged += DownloadStateChanged;
 
@@ -462,25 +480,42 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             {
                 if (operation.State == CoreWebView2DownloadState.Completed)
                 {
-                    ReportStatus(account, new BrowserStatusEventArgs($"Downloaded {fileName}"));
+                    ReportStatus(session, new BrowserStatusEventArgs($"Downloaded {fileName}"));
                     operation.StateChanged -= DownloadStateChanged;
                 }
                 else if (operation.State == CoreWebView2DownloadState.Interrupted)
                 {
-                    ReportStatus(account, new BrowserStatusEventArgs($"Download interrupted: {fileName}", isError: true));
+                    ReportStatus(session, new BrowserStatusEventArgs($"Download interrupted: {fileName}", isError: true));
                     operation.StateChanged -= DownloadStateChanged;
                 }
             }
         };
 
-        core.ProcessFailed += (_, _) => ReportStatus(account, new BrowserStatusEventArgs(
-            "The Gmail browser process stopped unexpectedly. Select Retry to reopen it.",
-            isError: true));
+        core.ProcessFailed += (_, args) =>
+        {
+            // Edge restarts auxiliary processes (including GPU and utility
+            // processes) automatically; those failures do not close the inbox.
+            if (args.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited or
+                CoreWebView2ProcessFailedKind.RenderProcessExited)
+            {
+                session.ProcessFailure = new BrowserStatusEventArgs(
+                    "The Gmail browser process stopped unexpectedly. Select Retry to reopen it.",
+                    isError: true);
+                ReportStatus(session, session.ProcessFailure);
+            }
+            else if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+            {
+                ReportStatus(session, new BrowserStatusEventArgs(
+                    "Gmail is not responding. Wait for it to recover, or select Retry to reopen it.",
+                    isError: true));
+            }
+        };
     }
 
     private static void HandleFileDragOver(Session session, DragEventArgs args)
     {
-        if (!IsGmailUri(session.View.CoreWebView2?.Source) || !ContainsFiles(args.Data))
+        if (session.ProcessFailure is not null ||
+            !IsGmailUri(session.View.CoreWebView2?.Source) || !ContainsFiles(args.Data))
             return;
 
         args.Effects = DragDropEffects.Copy;
@@ -489,7 +524,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
     private async Task HandleFileDropAsync(Session session, DragEventArgs args)
     {
-        if (!IsGmailUri(session.View.CoreWebView2?.Source) ||
+        if (session.ProcessFailure is not null ||
+            !IsGmailUri(session.View.CoreWebView2?.Source) ||
             args.Data.GetData(DataFormats.FileDrop, true) is not string[] droppedPaths)
             return;
 
@@ -512,12 +548,12 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
                     ? $"Adding {Path.GetFileName(files[0])} to the draft…"
                     : $"Adding {files.Length} files to the draft…"
                 : "Drop files directly onto an open reply or compose message box.";
-            ReportStatus(session.Account, new BrowserStatusEventArgs(message));
+            ReportStatus(session, new BrowserStatusEventArgs(message));
         }
         catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or
                                    JsonException or System.Runtime.InteropServices.COMException)
         {
-            ReportStatus(session.Account, new BrowserStatusEventArgs(
+            ReportStatus(session, new BrowserStatusEventArgs(
                 "Gmail could not add the dropped file. Try the paperclip button instead."));
         }
     }
@@ -533,11 +569,20 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         string[] files)
     {
         var core = session.View.CoreWebView2;
-        var pointJson = JsonSerializer.Serialize(new { x = dropPoint.X, y = dropPoint.Y });
+        if (session.View.ActualWidth <= 0 || session.View.ActualHeight <= 0) return false;
+
+        // WPF reports control coordinates, while the DOM expects CSS pixels.
+        // Relative coordinates remain accurate after browser zoom or app scaling.
+        var pointJson = JsonSerializer.Serialize(new
+        {
+            x = dropPoint.X / session.View.ActualWidth,
+            y = dropPoint.Y / session.View.ActualHeight
+        });
         var expression = $$"""
             (() => {
                 const point = {{pointJson}};
-                const hit = document.elementFromPoint(point.x, point.y);
+                const hit = document.elementFromPoint(
+                    point.x * window.innerWidth, point.y * window.innerHeight);
                 const editor = hit?.closest?.('[contenteditable="true"]');
                 if (!editor) return null;
 
@@ -740,30 +785,57 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         foreach (var pair in _sessions.Where(pair => pair.Key != _activeAccountId).ToArray())
         {
             pair.Value.View.Visibility = Visibility.Collapsed;
+            if (pair.Value.ProcessFailure is not null) continue;
+
             try
             {
                 if (!pair.Value.View.CoreWebView2.IsSuspended)
                     await pair.Value.View.CoreWebView2.TrySuspendAsync();
             }
-            catch (System.Runtime.InteropServices.COMException)
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or
+                                       System.Runtime.InteropServices.COMException)
             {
-                // Suspension is best-effort; the view remains hidden if Edge is busy.
+                // Suspension is best-effort; Edge may be busy, or the account may
+                // have been closed while the asynchronous suspension was pending.
             }
         }
     }
 
     private void SaveCurrentUrl(Session session)
     {
-        var source = session.View.Source?.AbsoluteUri ?? session.View.CoreWebView2?.Source;
+        string? source;
+        try
+        {
+            source = session.View.Source?.AbsoluteUri ?? session.View.CoreWebView2?.Source;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or
+                                   System.Runtime.InteropServices.COMException)
+        {
+            // A crashed browser can no longer report its URL. Keep the last saved
+            // location so disposal and Retry can still rebuild the account view.
+            return;
+        }
+
         if (!IsSafePersistedGmailUrl(source)) return;
         session.Account.LastUrl = source!;
         session.Account.LastUsedUtc = DateTime.UtcNow;
         if (!_disposed) AccountNavigationChanged?.Invoke(this, session.Account);
     }
 
-    private void ReportStatus(AccountProfile account, BrowserStatusEventArgs status)
+    private bool IsCurrentSession(Session session) =>
+        !_disposed &&
+        _sessions.TryGetValue(session.Account.Id, out var current) &&
+        ReferenceEquals(current, session);
+
+    private void ReportStatus(Session session, BrowserStatusEventArgs status)
     {
-        if (!_disposed && _activeAccountId == account.Id)
+        if (!IsCurrentSession(session)) return;
+
+        // Late download or drop callbacks cannot recover a closed browser.
+        // Keep its Retry action visible until the session is recreated.
+        status = session.ProcessFailure ?? status;
+        session.Status = status;
+        if (_activeAccountId == session.Account.Id)
             StatusChanged?.Invoke(this, status);
     }
 
