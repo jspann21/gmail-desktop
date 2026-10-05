@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using GmailDesktop.Dialogs;
 using GmailDesktop.Models;
@@ -180,6 +181,7 @@ public partial class MainWindow : Window
         AppScaleRoot.VerticalAlignment = VerticalAlignment.Stretch;
         AppScaleRoot.RenderTransform = Transform.Identity;
         AppScaleRoot.LayoutTransform = new ScaleTransform(_appScale, _appScale);
+        UpdateWindowChrome();
         UpdateAppScaleBounds();
     }
 
@@ -191,8 +193,30 @@ public partial class MainWindow : Window
 
         WindowContentClip.Clip = new RectangleGeometry(
             new Rect(0, 0, ScaleViewport.ActualWidth, ScaleViewport.ActualHeight),
-            10,
-            10);
+            WindowState == WindowState.Maximized ? 0 : 10,
+            WindowState == WindowState.Maximized ? 0 : 10);
+    }
+
+    private void Window_StateChanged(object? sender, EventArgs e)
+    {
+        UpdateWindowChrome();
+        UpdateAppScaleBounds();
+    }
+
+    private void UpdateWindowChrome()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        var chrome = WindowChrome.GetWindowChrome(this);
+        chrome.ResizeBorderThickness = new Thickness(maximized ? 0 : 8);
+        chrome.CornerRadius = new CornerRadius(maximized ? 0 : 10);
+        // CaptionHeight starts below the resize border. Keep native dragging,
+        // restore, double-click and the system menu within the scaled title bar.
+        chrome.CaptionHeight = Math.Max(0, 44 * _appScale - chrome.ResizeBorderThickness.Top);
+        MaximizeButton.ToolTip = maximized ? "Restore" : "Maximize";
+        System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, (string)MaximizeButton.ToolTip);
+        MaximizeIcon.Data = Geometry.Parse(maximized
+            ? "M 3,0 L 10,0 L 10,7 M 0,3 L 7,3 L 7,10 L 0,10 Z"
+            : "M 0,0 L 10,0 L 10,10 L 0,10 Z");
     }
 
     private void Account_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -566,17 +590,6 @@ public partial class MainWindow : Window
         if (hitTest == 0) return IntPtr.Zero;
         handled = true;
         return new IntPtr(hitTest);
-    }
-
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 2)
-        {
-            Maximize_Click(sender, e);
-            return;
-        }
-
-        if (e.LeftButton == MouseButtonState.Pressed) DragMove();
     }
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)

@@ -11,11 +11,12 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Loaded="Window_Loaded"
         SourceInitialized="Window_SourceInitialized"
+        StateChanged="Window_StateChanged"
         Closing="Window_Closing"
         Closed="Window_Closed"
         PreviewKeyDown="Window_PreviewKeyDown">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="7" CornerRadius="10" GlassFrameThickness="0" />
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="8" CornerRadius="10" GlassFrameThickness="0" />
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -127,8 +128,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Background="{DynamicResource SidebarBackgroundBrush}"
-                  MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Grid.Row="0" Background="{DynamicResource SidebarBackgroundBrush}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="TitleSidebarColumn" Width="82" />
                     <ColumnDefinition Width="*" />
@@ -158,8 +158,9 @@
                     <Button Style="{StaticResource TitleBarButtonStyle}" Click="Minimize_Click" ToolTip="Minimize">
                         <Path Data="M 0,0 L 10,0" Stroke="White" StrokeThickness="1" />
                     </Button>
-                    <Button Style="{StaticResource TitleBarButtonStyle}" Click="Maximize_Click" ToolTip="Maximize">
-                        <Rectangle Width="10" Height="10" Stroke="White" StrokeThickness="1" />
+                    <Button x:Name="MaximizeButton" Style="{StaticResource TitleBarButtonStyle}" Click="Maximize_Click" ToolTip="Maximize"
+                            AutomationProperties.Name="Maximize">
+                        <Path x:Name="MaximizeIcon" Data="M 0,0 L 10,0 L 10,10 L 0,10 Z" Stroke="White" StrokeThickness="1" />
                     </Button>
                     <Button Style="{StaticResource TitleBarButtonStyle}" Click="Close_Click" Tag="Close">
                         <Path Data="M 0,0 L 10,10 M 10,0 L 0,10" Stroke="White" StrokeThickness="1.2" />
