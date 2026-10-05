@@ -11,8 +11,24 @@ public static class ThemeService
 
     public static void Apply(ThemePreference preference)
     {
-        IsDark = preference == ThemePreference.Dark ||
-                 preference == ThemePreference.System && IsSystemDark();
+        ApplyPalette(preference == ThemePreference.Dark ||
+                     preference == ThemePreference.System && IsSystemDark());
+    }
+
+    public static bool RefreshSystemTheme(ThemePreference preference)
+    {
+        if (preference != ThemePreference.System) return false;
+
+        var isDark = IsSystemDark();
+        if (isDark == IsDark) return false;
+
+        ApplyPalette(isDark);
+        return true;
+    }
+
+    private static void ApplyPalette(bool isDark)
+    {
+        IsDark = isDark;
 
         Set("WindowBackgroundBrush", IsDark ? "#FF15191E" : "#FFF7F9FC");
         Set("SidebarBackgroundBrush", IsDark ? "#FF0B1118" : "#FF101821");

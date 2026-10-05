@@ -32,6 +32,8 @@ public partial class MainWindow : Window
     private AccountProfile? _selectedAccount;
     private bool _isExiting;
     private bool _isClosed;
+    private bool _themeRefreshPending;
+    private WindowState _lastNonMinimizedState = WindowState.Normal;
     private readonly HashSet<string> _removingAccountIds = [];
     private bool _hasShownTrayHint;
     private Point _accountDragStart;
@@ -199,6 +201,8 @@ public partial class MainWindow : Window
 
     private void Window_StateChanged(object? sender, EventArgs e)
     {
+        if (WindowState != WindowState.Minimized)
+            _lastNonMinimizedState = WindowState;
         UpdateWindowChrome();
         UpdateAppScaleBounds();
     }
@@ -558,6 +562,19 @@ public partial class MainWindow : Window
         IntPtr lParam,
         ref bool handled)
     {
+        const int wmSettingChange = 0x001A;
+        const int wmThemeChanged = 0x031A;
+        if (message is wmSettingChange or wmThemeChanged && !_themeRefreshPending && !_isClosed && !_isExiting)
+        {
+            _themeRefreshPending = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _themeRefreshPending = false;
+                if (!_isClosed && !_isExiting && ThemeService.RefreshSystemTheme(_settings.Theme))
+                    _sessionManager.ApplyTheme();
+            }));
+        }
+
         const int wmNcHitTest = 0x0084;
         if (message != wmNcHitTest || WindowState == WindowState.Maximized || ResizeMode != ResizeMode.CanResize)
             return IntPtr.Zero;
@@ -683,6 +700,7 @@ public partial class MainWindow : Window
 
     private void ScheduleSave()
     {
+        if (_isExiting || _isClosed) return;
         _saveTimer.Stop();
         _saveTimer.Start();
     }
@@ -730,7 +748,7 @@ public partial class MainWindow : Window
         {
             Show();
             if (WindowState == WindowState.Minimized)
-                WindowState = WindowState.Normal;
+                WindowState = _lastNonMinimizedState;
             Activate();
             Topmost = true;
             Topmost = false;
@@ -740,6 +758,9 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        // Application.Shutdown can ignore cancellation before dispatcher shutdown
+        // begins. Flush pending changes even when this close normally hides to tray.
+        SaveSettings();
         if (!_isExiting && _settings.HideToTray && !Application.Current.Dispatcher.HasShutdownStarted)
         {
             e.Cancel = true;
@@ -754,7 +775,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SaveSettings();
+        _isExiting = true;
     }
 
     private void Window_Closed(object? sender, EventArgs e)

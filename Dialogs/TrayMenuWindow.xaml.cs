@@ -28,6 +28,19 @@ public partial class TrayMenuWindow : Window
         Activate();
     }
 
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        if (!IsLoaded || IsClosing) return;
+
+        // Moving to the cursor's monitor can change the menu's size. Clamp its
+        // position again after WPF has applied the new DPI and completed layout.
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (!IsClosing) PositionBesideCursor();
+        }));
+    }
+
     private void PositionBesideCursor()
     {
         var handle = new WindowInteropHelper(this).Handle;
