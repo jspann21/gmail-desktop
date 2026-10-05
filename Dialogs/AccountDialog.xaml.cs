@@ -21,9 +21,18 @@ public partial class AccountDialog : Window
     public string SelectedColor => _selectedColor;
     public bool UseGmailAvatar => UseGmailAvatarCheckBox.IsChecked == true;
 
-    public AccountDialog(AccountProfile? account = null)
+    public AccountDialog(AccountProfile? account = null, AppScalePreference appScale = AppScalePreference.Normal)
     {
         InitializeComponent();
+        var scale = appScale switch
+        {
+            AppScalePreference.Smaller => 0.9,
+            AppScalePreference.Larger => 1.1,
+            _ => 1
+        };
+        AccountScaleRoot.LayoutTransform = new ScaleTransform(scale, scale);
+        Width *= scale;
+        Height *= scale;
         ColorList.ItemsSource = Colors;
 
         if (account is null)

@@ -414,7 +414,7 @@ public partial class MainWindow : Window
 
     private async void AddAccount_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new AccountDialog { Owner = this };
+        var dialog = new AccountDialog(appScale: _settings.AppScale) { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         var account = new AccountProfile
@@ -434,7 +434,7 @@ public partial class MainWindow : Window
         var account = GetContextAccount(sender);
         if (account is null || _removingAccountIds.Contains(account.Id)) return;
 
-        var dialog = new AccountDialog(account) { Owner = this };
+        var dialog = new AccountDialog(account, _settings.AppScale) { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         account.DisplayName = dialog.AccountName;

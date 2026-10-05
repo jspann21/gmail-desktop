@@ -120,7 +120,7 @@
             <Border.Effect>
                 <DropShadowEffect BlurRadius="24" ShadowDepth="5" Opacity="0.28" Color="#FF000000" />
             </Border.Effect>
-            <Grid>
+            <Grid x:Name="AccountScaleRoot">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="48" />
                     <RowDefinition Height="*" />
