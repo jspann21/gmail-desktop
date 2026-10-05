@@ -68,17 +68,18 @@ public sealed class AccountProfile : INotifyPropertyChanged
     }
 
     [JsonIgnore]
-    public string Initials
+    public string Initials => CreateInitials(string.IsNullOrWhiteSpace(DisplayName) ? Email : DisplayName);
+
+    public static string CreateInitials(string? source)
     {
-        get
-        {
-            var source = string.IsNullOrWhiteSpace(DisplayName) ? Email : DisplayName;
-            if (string.IsNullOrWhiteSpace(source)) return "G";
-            var parts = source.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return parts.Length > 1
-                ? string.Concat(parts.Take(2).Select(part => char.ToUpperInvariant(part[0])))
-                : source[..Math.Min(2, source.Length)].ToUpperInvariant();
-        }
+        if (string.IsNullOrWhiteSpace(source)) return "G";
+
+        var parts = source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+            return string.Concat(parts.Take(2).Select(part => StringInfo.GetNextTextElement(part))).ToUpperInvariant();
+
+        var name = new StringInfo(parts[0]);
+        return name.SubstringByTextElements(0, Math.Min(2, name.LengthInTextElements)).ToUpperInvariant();
     }
 
     [JsonIgnore]

@@ -115,17 +115,7 @@ public partial class AccountDialog : Window
             PreviewAvatarImageBrush.ImageSource = null;
         }
 
-        var source = NameTextBox?.Text.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            PreviewInitialsText.Text = "G";
-            return;
-        }
-
-        var parts = source.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        PreviewInitialsText.Text = parts.Length > 1
-            ? string.Concat(parts.Take(2).Select(part => char.ToUpperInvariant(part[0])))
-            : source[..Math.Min(2, source.Length)].ToUpperInvariant();
+        PreviewInitialsText.Text = AccountProfile.CreateInitials(NameTextBox?.Text);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
