@@ -51,7 +51,7 @@ public partial class AccountDialog : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        Height = Math.Min(Height, SystemParameters.WorkArea.Height - 24);
+        DialogPlacement.FitToOwnerWorkArea(this);
         foreach (var item in FindVisualChildren<RadioButton>(ColorList))
             item.IsChecked = string.Equals(item.Tag?.ToString(), _selectedColor, StringComparison.OrdinalIgnoreCase);
         NameTextBox.Focus();

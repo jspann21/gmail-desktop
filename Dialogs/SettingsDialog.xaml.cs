@@ -31,6 +31,8 @@ public partial class SettingsDialog : Window
     public SettingsDialog(AppSettings settings)
     {
         InitializeComponent();
+        var version = typeof(App).Assembly.GetName().Version;
+        VersionText.Text = version is null ? "Gmail Desktop" : $"Gmail Desktop {version.ToString(3)}";
 
         switch (settings.MemoryMode)
         {
@@ -87,8 +89,7 @@ public partial class SettingsDialog : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        Height = Math.Min(Height, SystemParameters.WorkArea.Height - 24);
-        Width = Math.Min(Width, SystemParameters.WorkArea.Width - 24);
+        DialogPlacement.FitToOwnerWorkArea(this);
     }
 
     private void WindowSurface_SizeChanged(object sender, SizeChangedEventArgs e)

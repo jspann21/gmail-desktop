@@ -194,7 +194,7 @@
                     </Button>
                 </Grid>
 
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="30,24,30,20">
                         <Grid Margin="0,0,0,20">
                             <Grid.ColumnDefinitions>
@@ -357,12 +357,11 @@
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                     <Grid Margin="24,0">
                         <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
                             <TextBlock Text="Settings are stored only on this PC" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="11" VerticalAlignment="Center" />
-                            <TextBlock Text="  •  " Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBlock Text="Gmail Desktop 1.0" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="11" VerticalAlignment="Center" />
+                                       FontSize="11" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="VersionText" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button Content="Cancel" Click="Cancel_Click" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0" />
