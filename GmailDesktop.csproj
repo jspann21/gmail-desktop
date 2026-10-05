@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets\GmailDesktop.ico</ApplicationIcon>
     <AssemblyName>GmailDesktop</AssemblyName>
     <RootNamespace>GmailDesktop</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <Authors>Gmail Desktop</Authors>
     <Description>A lightweight, multi-account Gmail desktop wrapper for Windows.</Description>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
