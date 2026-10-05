@@ -77,7 +77,7 @@ Create a release build with:
 dotnet publish -p:PublishProfile=Windows-x64
 ```
 
-The published app is written to `bin\Release\publish`.
+The published app is written to `publish`, which is also the input directory for the installer.
 
 To build the single-file installer after publishing, install [Inno Setup](https://jrsoftware.org/isinfo.php) and run:
 
