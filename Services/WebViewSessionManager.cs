@@ -38,6 +38,8 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     private readonly SemaphoreSlim _switchLock = new(1, 1);
     private string? _activeAccountId;
     private string? _previousAccountId;
+    private string? _requestedAccountId;
+    private long _switchGeneration;
     private bool _disposed;
 
     public event EventHandler<BrowserStatusEventArgs>? StatusChanged;
@@ -45,12 +47,33 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
     public async Task SwitchToAsync(AccountProfile account, MemoryMode mode)
     {
+        if (_disposed) return;
+        var generation = ++_switchGeneration;
+        _requestedAccountId = account.Id;
+        if (_activeAccountId != account.Id)
+        {
+            // Selection labels change before initialization can finish. Hide the
+            // previous account immediately so it cannot be used under a new label.
+            foreach (var view in host.Children.OfType<WebView2CompositionControl>())
+                view.Visibility = Visibility.Collapsed;
+        }
+        StatusChanged?.Invoke(this, new BrowserStatusEventArgs($"Opening {account.DisplayName}…", isBusy: true));
+
         await _switchLock.WaitAsync();
         try
         {
             ThrowIfDisposed();
+            if (generation != _switchGeneration) return;
             if (_activeAccountId == account.Id && _sessions.TryGetValue(account.Id, out var activeSession))
             {
+                if (activeSession.ProcessFailure is null)
+                {
+                    activeSession.View.Visibility = Visibility.Visible;
+                    activeSession.View.UpdateLayout();
+                    if (activeSession.View.CoreWebView2.IsSuspended)
+                        activeSession.View.CoreWebView2.Resume();
+                    activeSession.View.Focus();
+                }
                 ReportStatus(activeSession, activeSession.Status);
                 return;
             }
@@ -67,10 +90,10 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
 
             _previousAccountId = oldActiveId;
             _activeAccountId = account.Id;
-            StatusChanged?.Invoke(this, new BrowserStatusEventArgs($"Opening {account.DisplayName}…", isBusy: true));
 
-            var session = await GetOrCreateSessionAsync(account);
+            var session = await GetOrCreateSessionAsync(account, generation);
             ThrowIfDisposed();
+            if (generation != _switchGeneration) return;
             if (session.ProcessFailure is null)
             {
                 // Composition-backed views need a realized WPF surface before their
@@ -87,7 +110,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         }
         catch (WebView2RuntimeNotFoundException)
         {
-            if (_disposed) return;
+            if (_disposed || generation != _switchGeneration) return;
             StatusChanged?.Invoke(this, new BrowserStatusEventArgs(
                 "Microsoft Edge WebView2 Runtime is required. Install it, then select Retry.",
                 isError: true));
@@ -98,7 +121,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         }
         catch (Exception ex)
         {
-            if (_disposed) return;
+            if (_disposed || generation != _switchGeneration) return;
             StatusChanged?.Invoke(this, new BrowserStatusEventArgs(
                 $"Gmail could not be opened: {ex.Message}",
                 isError: true));
@@ -117,12 +140,17 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             ThrowIfDisposed();
             await ReconcileSessionsCoreAsync(mode);
         }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+            // Settings may still be waiting for a switch when the app closes.
+        }
         finally { _switchLock.Release(); }
     }
 
     public void RefreshActive()
     {
         if (_activeAccountId is not null &&
+            _activeAccountId == _requestedAccountId &&
             _sessions.TryGetValue(_activeAccountId, out var session) &&
             session.ProcessFailure is null &&
             session.View.CoreWebView2 is not null)
@@ -134,6 +162,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     public void OpenInbox()
     {
         if (_activeAccountId is null ||
+            _activeAccountId != _requestedAccountId ||
             !_sessions.TryGetValue(_activeAccountId, out var session) ||
             session.ProcessFailure is not null ||
             session.View.CoreWebView2 is null)
@@ -158,6 +187,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
     public void GoBack()
     {
         if (_activeAccountId is not null &&
+            _activeAccountId == _requestedAccountId &&
             _sessions.TryGetValue(_activeAccountId, out var session) &&
             session.ProcessFailure is null &&
             session.View.CanGoBack)
@@ -226,7 +256,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         }
     }
 
-    private async Task<Session> GetOrCreateSessionAsync(AccountProfile account)
+    private async Task<Session> GetOrCreateSessionAsync(AccountProfile account, long generation)
     {
         if (_sessions.TryGetValue(account.Id, out var existing)) return existing;
 
@@ -243,6 +273,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
             userDataFolder: settingsService.GetProfileDirectory(account),
             options: options);
         ThrowIfDisposed();
+        if (generation != _switchGeneration) throw new OperationCanceledException();
 
         var view = new WebView2CompositionControl
         {
@@ -272,9 +303,11 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         {
             await view.EnsureCoreWebView2Async(environment);
             ThrowIfDisposed();
+            if (generation != _switchGeneration) throw new OperationCanceledException();
             var session = new Session(account, view);
             await ConfigureViewAsync(session);
             ThrowIfDisposed();
+            if (generation != _switchGeneration) throw new OperationCanceledException();
             var destination = IsSafePersistedGmailUrl(account.LastUrl)
                 ? account.LastUrl
                 : "https://mail.google.com/";
@@ -835,7 +868,7 @@ public sealed class WebViewSessionManager(Grid host, SettingsService settingsSer
         // Keep its Retry action visible until the session is recreated.
         status = session.ProcessFailure ?? status;
         session.Status = status;
-        if (_activeAccountId == session.Account.Id)
+        if (_activeAccountId == session.Account.Id && _requestedAccountId == session.Account.Id)
             StatusChanged?.Invoke(this, status);
     }
 
