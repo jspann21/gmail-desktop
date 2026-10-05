@@ -592,23 +592,25 @@ public partial class MainWindow : Window
         return new IntPtr(hitTest);
     }
 
-    private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // WebView2 blocks its browser process while forwarding accelerator keys.
+        // Return from the key callback before navigating or opening a modal dialog.
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.R)
         {
-            _sessionManager.RefreshActive();
             e.Handled = true;
+            QueueShortcut(_sessionManager.RefreshActive);
             return;
         }
 
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.OemComma)
         {
-            Settings_Click(sender, e);
             e.Handled = true;
+            QueueShortcut(() => Settings_Click(this, new RoutedEventArgs()));
             return;
         }
 
-        if (!_settings.EnableKeyboardShortcuts || !Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) return;
+        if (!_settings.EnableKeyboardShortcuts || Keyboard.Modifiers != ModifierKeys.Alt) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         var index = key switch
         {
@@ -627,9 +629,15 @@ public partial class MainWindow : Window
         if (index >= 0 && index < Accounts.Count)
         {
             e.Handled = true;
-            await SelectAccountAsync(Accounts[index]);
+            var account = Accounts[index];
+            QueueShortcut(async () => await SelectAccountAsync(account));
         }
     }
+
+    private void QueueShortcut(Action action) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        if (!_isExiting && !_isClosed && IsEnabled) action();
+    }));
 
     private void SessionManager_StatusChanged(object? sender, BrowserStatusEventArgs e)
     {
